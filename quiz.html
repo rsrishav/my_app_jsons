@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Minna no Quiz</title>
+<style>
+  body {
+    font-family: 'Segoe UI', sans-serif;
+    background-color: #f9f9fb;
+    color: #333;
+    max-width: 600px;
+    margin: 2em auto;
+    padding: 1.5em;
+    border-radius: 10px;
+    box-shadow: 0 0 10px rgba(0,0,0,0.1);
+  }
+  h2 { text-align: center; color: #1f3b75; margin-bottom: 1em; }
+  h3 { text-align: center; color: #222; }
+  #quizBox { margin-top: 1em; }
+  .choice-btn {
+    display: block; width: 100%; margin: 0.5em 0; padding: 12px;
+    font-size: 16px; border: none; border-radius: 6px; cursor: pointer;
+    background-color: #e6f0ff; color: #222; transition: background 0.2s ease;
+  }
+  .choice-btn:hover:not(:disabled) { background-color: #cfe2ff; }
+  .correct { background-color: #28a745 !important; color: #fff; }
+  .incorrect { background-color: #dc3545 !important; color: #fff; }
+  button[disabled] { opacity: 0.6; cursor: not-allowed; }
+  #controls { display: flex; flex-wrap: wrap; gap: 1em; justify-content: center; align-items: center; margin-bottom: 1.2em; }
+  select, button { padding: 8px 12px; border-radius: 6px; border: 1px solid #ccc; font-size: 15px; background: #fff; }
+  button { background-color: #007bff; color: white; cursor: pointer; }
+  button:hover { background-color: #0056b3; }
+  #nextContainer { text-align: center; margin-top: 1em; }
+  p { text-align: center; }
+  #explanation {
+    text-align: left; font-style: normal; margin-top: 1em; color: #222;
+    background: #f0f4ff; padding: 15px; border-radius: 8px;
+    white-space: pre-wrap; line-height: 1.4;
+  }
+</style>
+</head>
+<body>
+
+<h2>Minna no Quiz</h2>
+
+<div id="controls">
+  <label>
+    Chapter:
+    <select id="chapterSelect"></select>
+  </label>
+
+  <label>
+    Mode:
+    <select id="modeSelect">
+      <option value="jp_to_en">Japanese → English</option>
+      <option value="en_to_jp">English → Japanese</option>
+    </select>
+  </label>
+
+  <label>
+    Questions:
+    <select id="questionCount">
+      <option value="5">5</option>
+      <option value="10" selected>10</option>
+      <option value="15">15</option>
+      <option value="20">20</option>
+      <option value="all">All</option>
+    </select>
+  </label>
+
+  <button onclick="startQuiz()">Start Quiz</button>
+</div>
+
+<div id="quizBox"></div>
+
+<script>
+const quizDataUrl = 'https://raw.githubusercontent.com/rsrishav/my_app_jsons/main/japanese-vocab-1-50.json'; // <-- Local path or URL
+let quizData = [];
+let quizQuestions = [];
+let currentQuestionIndex = 0;
+let score = 0;
+
+// Load JSON data
+async function loadQuizData() {
+  try {
+    const res = await fetch(quizDataUrl);
+    quizData = await res.json();
+    populateChapters();
+  } catch(err) {
+    alert('Failed to load quiz data. Check URL or local path.');
+    console.error(err);
+  }
+}
+
+function populateChapters() {
+  const chapterSelect = document.getElementById('chapterSelect');
+  chapterSelect.innerHTML = '';
+  quizData.chapters.forEach(ch => {
+    const opt = document.createElement('option');
+    opt.value = ch.chapter;
+    opt.text = `${ch.title || ''}`;
+    chapterSelect.add(opt);
+  });
+}
+
+function shuffle(array) {
+  return array.sort(() => Math.random() - 0.5);
+}
+
+function generateOptions(question, chapterQuestions, mode) {
+  let correct, choices = [];
+  if(mode === 'jp_to_en'){
+    correct = question.en;
+    choices = [correct];
+    const others = chapterQuestions.filter(q => q.en !== correct);
+    while(choices.length < 4 && others.length) {
+      const rand = others.splice(Math.floor(Math.random()*others.length),1)[0];
+      choices.push(rand.en);
+    }
+  } else {
+    correct = question.jp.kana;
+    choices = [correct];
+    const others = chapterQuestions.filter(q => q.jp.kana !== correct);
+    while(choices.length < 4 && others.length) {
+      const rand = others.splice(Math.floor(Math.random()*others.length),1)[0];
+      choices.push(rand.jp.kana);
+    }
+  }
+  return { options: shuffle(choices), correct };
+}
+
+function startQuiz() {
+  const chapterNum = parseInt(document.getElementById('chapterSelect').value);
+  const mode = document.getElementById('modeSelect').value;
+  const qCount = document.getElementById('questionCount').value;
+  const chapter = quizData.chapters.find(ch => ch.chapter === chapterNum);
+  if(!chapter) return alert('Please select a chapter or load JSON!');
+
+  let questions = shuffle(chapter.questions);
+  let count = qCount === 'all' ? questions.length : parseInt(qCount);
+  questions = questions.slice(0, count);
+
+  quizQuestions = questions.map(q => {
+    const { options, correct } = generateOptions(q, chapter.questions, mode);
+    return { question: q, options, correct };
+  });
+
+  currentQuestionIndex = 0;
+  score = 0;
+  showQuestion(mode);
+}
+
+function showQuestion(mode) {
+  const qObj = quizQuestions[currentQuestionIndex];
+  const q = qObj.question;
+  const quizBox = document.getElementById('quizBox');
+  const questionText = mode === 'jp_to_en' ? q.jp.kana : q.en;
+
+  quizBox.innerHTML = `
+    <h3>${questionText}</h3>
+    <div id="choices"></div>
+    <p>Question ${currentQuestionIndex + 1} of ${quizQuestions.length}</p>
+    <div id="nextContainer"></div>
+    <div id="explanation"></div>
+  `;
+
+  const choicesDiv = document.getElementById('choices');
+
+  qObj.options.forEach(opt => {
+    const btn = document.createElement('button');
+    btn.className = 'choice-btn';
+    btn.textContent = opt;
+    btn.addEventListener('click', () => selectAnswer(opt, mode));
+    choicesDiv.appendChild(btn);
+  });
+}
+
+function selectAnswer(selected, mode) {
+  const qObj = quizQuestions[currentQuestionIndex];
+  const buttons = document.querySelectorAll('.choice-btn');
+  buttons.forEach(btn => btn.disabled = true);
+
+  buttons.forEach(btn => {
+    if(btn.textContent === qObj.correct) btn.classList.add('correct');
+    else if(btn.textContent === selected) btn.classList.add('incorrect');
+  });
+
+  if(selected === qObj.correct) score++;
+
+  const q = qObj.question;
+  let explanationText = `Kanji: ${q.jp.kanji}\nKana: ${q.jp.kana}\nRomaji: ${q.jp.romaji}\nEnglish: ${q.en}\n\n`;
+  q.examples.forEach(ex => {
+    explanationText += `${ex.jp} - ${ex.romaji} - ${ex.en}\n`;
+  });
+  document.getElementById('explanation').textContent = explanationText;
+
+  document.getElementById('nextContainer').innerHTML = `<button onclick="nextQuestion('${mode}')">Next</button>`;
+}
+
+function nextQuestion(mode) {
+  currentQuestionIndex++;
+  if(currentQuestionIndex < quizQuestions.length) showQuestion(mode);
+  else showScore();
+}
+
+function showScore() {
+  document.getElementById('quizBox').innerHTML = `
+    <h2>Quiz Finished!</h2>
+    <p>You scored ${score} out of ${quizQuestions.length}</p>
+    <div style="text-align:center; margin-top:1em;">
+      <button onclick="startQuiz()">Restart</button>
+    </div>
+  `;
+}
+
+// Load JSON on page load
+loadQuizData();
+</script>
+</body>
+</html>
